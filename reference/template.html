@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NOTAM relevance review</title>
+<style>
+  :root {
+    --paper: #edede7;
+    --terrain: #e3dcca;
+    --ink: #15171b;
+    --ink-soft: #5b6169;
+    --rule: #c5c3b9;
+    --airspace: #a81e68;
+    --track: #1a5b8f;
+    --ui: "Segoe UI", system-ui, -apple-system, sans-serif;
+    --mono: Consolas, "Cascadia Mono", "SF Mono", monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--paper); color: var(--ink);
+    font: 16px/1.5 var(--ui);
+  }
+  header {
+    display: flex; align-items: baseline; gap: 20px;
+    padding: 14px 24px; border-bottom: 1px solid var(--rule);
+  }
+  h1 { font-size: 17px; font-weight: 600; margin: 0; letter-spacing: -0.01em; }
+  .count { color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+  .bar { flex: 1; height: 4px; background: var(--rule); border-radius: 2px; overflow: hidden; }
+  .bar div { height: 100%; background: var(--airspace); width: 0; transition: width .2s; }
+  button {
+    font: inherit; cursor: pointer; border-radius: 3px;
+    border: 1px solid var(--rule); background: transparent; color: var(--ink);
+    padding: 7px 14px;
+  }
+  button:hover { border-color: var(--ink-soft); }
+  :focus-visible { outline: 2px solid var(--track); outline-offset: 2px; }
+
+  main { display: grid; grid-template-columns: 1.1fr 1fr; gap: 28px; padding: 24px; align-items: start; }
+  @media (max-width: 860px) { main { grid-template-columns: 1fr; } }
+
+  svg.chart { width: 100%; height: auto; border: 1px solid var(--rule); display: block; background: var(--terrain); }
+  .legend { display: flex; gap: 18px; margin-top: 8px; font-size: 13px; color: var(--ink-soft); }
+  .swatch { display: inline-block; width: 14px; height: 3px; vertical-align: middle; margin-right: 6px; }
+
+  .notice { font-size: 21px; line-height: 1.35; margin: 0 0 18px; letter-spacing: -0.01em; }
+  dl { margin: 0 0 18px; display: grid; grid-template-columns: auto 1fr; gap: 6px 16px; font-size: 15px; }
+  dt { color: var(--ink-soft); }
+  dd { margin: 0; }
+  details { border-top: 1px solid var(--rule); padding-top: 12px; }
+  summary { cursor: pointer; color: var(--ink-soft); font-size: 14px; }
+  pre { font: 13px/1.6 var(--mono); white-space: pre-wrap; word-break: break-word; margin: 10px 0 0; color: var(--ink-soft); }
+
+  footer { border-top: 1px solid var(--rule); padding: 18px 24px 28px; }
+  .question { font-size: 15px; margin: 0 0 12px; }
+  .grades { display: flex; gap: 10px; flex-wrap: wrap; }
+  .grades button { padding: 11px 18px; font-size: 15px; }
+  .grades button span { color: var(--ink-soft); font-variant-numeric: tabular-nums; margin-right: 8px; }
+  .grades button[data-picked="yes"] { background: var(--airspace); border-color: var(--airspace); color: #fff; }
+  .grades button[data-picked="yes"] span { color: rgba(255,255,255,.72); }
+  .why { margin-top: 14px; display: flex; gap: 10px; align-items: center; }
+  .why input { flex: 1; font: inherit; padding: 8px 10px; border: 1px solid var(--rule); border-radius: 3px; background: #fff; }
+  .nav { margin-top: 16px; display: flex; gap: 10px; align-items: center; }
+  .nav .spacer { flex: 1; }
+  .done { color: var(--ink-soft); font-size: 14px; }
+  #warn {
+    margin: 0 0 14px; padding: 10px 12px; font-size: 14px;
+    border-left: 3px solid var(--airspace); background: #fff;
+  }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>NOTAM relevance review</h1>
+  <span class="count" id="count"></span>
+  <div class="bar"><div id="progress"></div></div>
+  <button id="export">Save my answers to a file</button>
+</header>
+
+<main>
+  <section>
+    <svg class="chart" id="chart" viewBox="0 0 520 380" role="img" aria-label="Flight path and the area the notice covers"></svg>
+    <p class="legend">
+      <span><i class="swatch" style="background:var(--track)"></i>Flight path</span>
+      <span><i class="swatch" style="background:var(--airspace)"></i>Where the notice applies</span>
+    </p>
+  </section>
+
+  <section>
+    <p class="notice" id="notice"></p>
+    <dl id="facts"></dl>
+    <details>
+      <summary>Show the notice as it was published</summary>
+      <pre id="raw"></pre>
+    </details>
+  </section>
+</main>
+
+<footer>
+  <p class="question">How much should this have mattered to this flight?</p>
+  <div class="grades" id="grades">
+    <button data-grade="critical"><span>1</span>Critical</button>
+    <button data-grade="worth_knowing"><span>2</span>Worth knowing</button>
+    <button data-grade="background"><span>3</span>Background</button>
+    <button data-grade="not_relevant"><span>4</span>Not relevant</button>
+  </div>
+  <div class="why">
+    <label for="why">Why, in a few words (optional)</label>
+    <input id="why" autocomplete="off">
+  </div>
+  <div class="nav">
+    <button id="prev">Back</button>
+    <button id="next">Skip for now</button>
+    <button id="import">Load answers from a file</button>
+    <input type="file" id="importFile" accept=".csv" hidden>
+    <span class="spacer"></span>
+    <span class="done" id="done"></span>
+  </div>
+</footer>
+
+<script>
+const ITEMS = __DATA__;
+const KEY = "notam-relevance-answers";
+
+// Opened by double click, this is a file:// page, and some browsers refuse
+// storage there. Failing quietly would cost her everything on close, so prove
+// a value survives a write and a read before relying on it.
+const storageWorks = (() => {
+  try {
+    localStorage.setItem(KEY + "-test", "1");
+    const ok = localStorage.getItem(KEY + "-test") === "1";
+    localStorage.removeItem(KEY + "-test");
+    return ok;
+  } catch (e) { return false; }
+})();
+
+let answers = {};
+try { answers = JSON.parse(localStorage.getItem(KEY) || "{}"); } catch (e) { answers = {}; }
+function save() {
+  try { localStorage.setItem(KEY, JSON.stringify(answers)); } catch (e) {}
+}
+
+/** Read back an exported file. Fields are quoted, with "" for a literal quote. */
+function parseCsv(text) {
+  const rows = [];
+  let row = [], cell = "", quoted = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (quoted) {
+      if (ch === '"' && text[i + 1] === '"') { cell += '"'; i++; }
+      else if (ch === '"') { quoted = false; }
+      else { cell += ch; }
+    } else if (ch === '"') { quoted = true; }
+    else if (ch === ",") { row.push(cell); cell = ""; }
+    else if (ch === "\n") { row.push(cell); rows.push(row); row = []; cell = ""; }
+    else if (ch !== "\r") { cell += ch; }
+  }
+  if (cell || row.length) { row.push(cell); rows.push(row); }
+  return rows;
+}
+
+// Start where she left off: the first pair with no grade yet.
+let at = ITEMS.findIndex(item => !answers[item.id]);
+if (at < 0) at = 0;
+
+const el = id => document.getElementById(id);
+
+function project(points, box) {
+  // Equirectangular is plenty at this scale, with longitude squeezed by latitude.
+  const lats = points.map(p => p[0]), lons = points.map(p => p[1]);
+  const midLat = (Math.min(...lats) + Math.max(...lats)) / 2;
+  const k = Math.cos(midLat * Math.PI / 180);
+  const xs = lons.map(l => l * k), ys = lats;
+  let x0 = Math.min(...xs), x1 = Math.max(...xs);
+  let y0 = Math.min(...ys), y1 = Math.max(...ys);
+  const padX = (x1 - x0) * 0.12 || 0.02, padY = (y1 - y0) * 0.12 || 0.02;
+  x0 -= padX; x1 += padX; y0 -= padY; y1 += padY;
+  const scale = Math.min(box.w / (x1 - x0), box.h / (y1 - y0));
+  const offX = box.x + (box.w - (x1 - x0) * scale) / 2;
+  const offY = box.y + (box.h - (y1 - y0) * scale) / 2;
+  return {
+    to: ([lat, lon]) => [offX + (lon * k - x0) * scale, offY + (y1 - lat) * scale],
+    nmToPx: 1 / 60 * scale,
+  };
+}
+
+function circlePoints(center, radiusNm) {
+  const out = [];
+  for (let d = 0; d < 360; d += 10) {
+    const r = d * Math.PI / 180;
+    const dLat = (radiusNm / 60) * Math.cos(r);
+    const dLon = (radiusNm / 60) * Math.sin(r) / Math.cos(center[0] * Math.PI / 180);
+    out.push([center[0] + dLat, center[1] + dLon]);
+  }
+  return out;
+}
+
+function drawChart(item) {
+  const box = { x: 10, y: 10, w: 500, h: 360 };
+  const shapePoints = !item.shape ? []
+    : item.shape.kind === "circle" ? circlePoints(item.shape.center, item.shape.radius_nm)
+    : item.shape.kind === "point" ? [item.shape.center]
+    : item.shape.points;
+  const all = item.path.concat(shapePoints);
+  const p = project(all, box);
+
+  const track = item.path.map(pt => p.to(pt).map(n => n.toFixed(1)).join(",")).join(" ");
+  const area = shapePoints.map(pt => p.to(pt).map(n => n.toFixed(1)).join(",")).join(" ");
+  const start = p.to(item.path[0]);
+
+  // A scale bar makes "is that close?" answerable at a glance. Pick a round
+  // distance that lands between 60 and 200 px, so it works for a half-mile
+  // drone box and for a 136 nm service outage alike.
+  const steps = [1, 2, 5, 10, 25, 50, 100, 200, 500];
+  const nmBar = steps.find(s => s * p.nmToPx > 60) || steps[steps.length - 1];
+  const barPx = nmBar * p.nmToPx;
+  const bar = barPx > 20
+    ? `<g stroke="#15171b" stroke-width="1.2"><line x1="20" y1="362" x2="${20 + barPx}" y2="362"/>
+       <line x1="20" y1="358" x2="20" y2="366"/><line x1="${20 + barPx}" y1="358" x2="${20 + barPx}" y2="366"/></g>
+       <text x="${24 + barPx}" y="366" font-size="11" fill="#15171b">${nmBar} nm</text>` : "";
+
+  el("chart").innerHTML = `
+    ${item.shape && item.shape.kind === "point" ? `<circle cx="${p.to(item.shape.center)[0].toFixed(1)}" cy="${p.to(item.shape.center)[1].toFixed(1)}" r="6" fill="none" stroke="#a81e68" stroke-width="2"/>` : ""}
+    ${area && (!item.shape || item.shape.kind !== "point") ? `<polygon points="${area}" fill="#a81e68" fill-opacity="0.16" stroke="#a81e68" stroke-width="1.6"/>` : ""}
+    <polyline points="${track}" fill="none" stroke="#1a5b8f" stroke-width="2" stroke-linejoin="round"/>
+    <circle cx="${start[0].toFixed(1)}" cy="${start[1].toFixed(1)}" r="4" fill="#1a5b8f"/>
+    ${bar}
+    ${!item.shape ? `<text x="20" y="28" font-size="12" fill="#5b6169">This notice has no mapped area</text>` : ""}`;
+}
+
+function show() {
+  const item = ITEMS[at];
+  drawChart(item);
+  el("notice").textContent = item.notice;
+  el("raw").textContent = item.raw;
+
+  const moment = item.moment || {};
+  const nearness = moment.nm === undefined ? "not known"
+    : (item.shape && item.shape.kind === "point") ? `applies at a place ${moment.nm} nm from the nearest point of this flight`
+    : moment.inside ? (moment.nm < 0.1 ? "flew inside the area" : `flew inside the area, ${moment.nm} nm past its edge`)
+    : `${moment.nm} nm outside the area at the nearest point`;
+  const rows = [
+    ["Flight", `${item.date} from ${item.airport || "?"}, ${item.duration_min} min`],
+    ["How close it came", nearness],
+    ["What the aircraft was doing then", moment.phase || "not known"],
+    ["Altitude then", moment.alt_ft !== null && moment.alt_ft !== undefined ? `${moment.alt_ft.toLocaleString()} ft` : "not known"],
+    ["Notice was active for", `${item.overlap_min} min of this flight`],
+  ];
+  el("facts").innerHTML = rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("");
+
+  const answer = answers[item.id] || {};
+  el("why").value = answer.why || "";
+  document.querySelectorAll("#grades button").forEach(b => {
+    b.dataset.picked = b.dataset.grade === answer.grade ? "yes" : "no";
+  });
+
+  const graded = Object.keys(answers).length;
+  el("count").textContent = `${at + 1} of ${ITEMS.length}`;
+  el("progress").style.width = (graded / ITEMS.length * 100) + "%";
+  el("done").textContent = graded === ITEMS.length
+    ? "All done. Save your answers to a file."
+    : `${graded} graded, ${ITEMS.length - graded} to go`;
+}
+
+function go(step) {
+  at = Math.min(ITEMS.length - 1, Math.max(0, at + step));
+  show();
+}
+
+function grade(value) {
+  const item = ITEMS[at];
+  answers[item.id] = { grade: value, why: el("why").value.trim(), when: new Date().toISOString() };
+  save();
+  if (at < ITEMS.length - 1) { go(1); } else { show(); }
+}
+
+document.querySelectorAll("#grades button").forEach(b => {
+  b.addEventListener("click", () => grade(b.dataset.grade));
+});
+el("next").addEventListener("click", () => go(1));
+el("prev").addEventListener("click", () => go(-1));
+el("why").addEventListener("change", () => {
+  const item = ITEMS[at];
+  if (answers[item.id]) { answers[item.id].why = el("why").value.trim(); save(); }
+});
+
+document.addEventListener("keydown", e => {
+  if (e.target.tagName === "INPUT") { if (e.key === "Enter") el("why").blur(); return; }
+  const keys = { "1": "critical", "2": "worth_knowing", "3": "background", "4": "not_relevant" };
+  if (keys[e.key]) { grade(keys[e.key]); }
+  else if (e.key === "ArrowRight") { go(1); }
+  else if (e.key === "ArrowLeft") { go(-1); }
+});
+
+el("import").addEventListener("click", () => el("importFile").click());
+el("importFile").addEventListener("change", event => {
+  const file = event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    const rows = parseCsv(String(reader.result));
+    const head = rows.shift() || [];
+    const col = name => head.indexOf(name);
+    const known = new Set(ITEMS.map(i => i.id));
+    let loaded = 0, skipped = 0;
+    rows.forEach(r => {
+      const id = r[col("pair_id")];
+      if (!id) return;
+      if (!known.has(id)) { skipped++; return; }
+      answers[id] = { grade: r[col("grade")], why: r[col("why")] || "", when: r[col("graded_at")] || "" };
+      loaded++;
+    });
+    save();
+    at = ITEMS.findIndex(item => !answers[item.id]);
+    if (at < 0) at = ITEMS.length - 1;
+    show();
+    el("done").textContent = skipped
+      ? `Loaded ${loaded} answers. ${skipped === 1 ? "One row was" : skipped + " rows were"} `
+        + "for a different set of flights and got left out."
+      : `Loaded ${loaded} answers. Carrying on from where that file stopped.`;
+  };
+  reader.readAsText(file);
+  event.target.value = "";
+});
+
+el("export").addEventListener("click", () => {
+  const head = ["pair_id", "flight_id", "notam_id", "grade", "why", "graded_at"];
+  const lines = [head.join(",")];
+  ITEMS.forEach(item => {
+    const a = answers[item.id];
+    if (!a) return;
+    const [flight, notam] = item.id.split("__");
+    const cells = [item.id, flight, notam, a.grade, (a.why || "").replace(/"/g, '""'), a.when];
+    lines.push(cells.map(c => `"${c}"`).join(","));
+  });
+  // Every export is the full set, not a delta. Browsers will not overwrite a
+  // download, they append "(1)", so the date and count in the name are what
+  // tell her, and us, which file is the newest.
+  const now = new Date();
+  const pad = n => String(n).padStart(2, "0");
+  const stamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}`;
+  const graded = lines.length - 1;
+  const blob = new Blob([lines.join("\n")], { type: "text/csv" });
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = `notam_answers_${stamp}_${graded}of${ITEMS.length}.csv`;
+  link.click();
+  el("done").textContent = `Saved ${graded} answers. Email that file to Vaibhav.`;
+});
+
+if (!storageWorks) {
+  const warn = document.createElement("p");
+  warn.id = "warn";
+  warn.textContent = "This browser will not remember your progress between visits. "
+    + "Save your answers to a file before you close this tab, and use "
+    + "“Load answers from a file” to pick them up again.";
+  document.querySelector("footer").prepend(warn);
+}
+
+show();
+</script>
+</body>
+</html>
