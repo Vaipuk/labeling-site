@@ -6,3 +6,4 @@ dist/
 *.log
 __pycache__/
 *.pyc
+public/pairs.json

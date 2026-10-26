@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Grading progress</title>
+<style>
+  :root {
+    --paper: #edede7;
+    --terrain: #e3dcca;
+    --ink: #15171b;
+    --ink-soft: #5b6169;
+    --rule: #c5c3b9;
+    --airspace: #a81e68;
+    --track: #1a5b8f;
+    --ui: "Segoe UI", system-ui, -apple-system, sans-serif;
+    --mono: Consolas, "Cascadia Mono", "SF Mono", monospace;
+
+    --grade-critical: #a81e68;
+    --grade-worth: #d27aa6;
+    --grade-background: #8fb1cf;
+    --grade-none: #c5c3b9;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body {
+    margin: 0; background: var(--paper); color: var(--ink);
+    font: 16px/1.5 var(--ui);
+  }
+  header {
+    display: flex; align-items: baseline; gap: 20px;
+    padding: 14px 24px; border-bottom: 1px solid var(--rule);
+  }
+  h1 { font-size: 17px; font-weight: 600; margin: 0; letter-spacing: -0.01em; }
+  h2 { font-size: 15px; font-weight: 600; margin: 0 0 10px; }
+  header .spacer { flex: 1; }
+  button {
+    font: inherit; cursor: pointer; border-radius: 3px;
+    border: 1px solid var(--rule); background: transparent; color: var(--ink);
+    padding: 7px 14px;
+  }
+  button:hover { border-color: var(--ink-soft); }
+  :focus-visible { outline: 2px solid var(--track); outline-offset: 2px; }
+
+  main { padding: 24px; max-width: 1100px; }
+  section { margin-bottom: 32px; }
+  .soft { color: var(--ink-soft); }
+  .small { font-size: 13px; }
+
+  #key-form { display: flex; gap: 10px; align-items: center; max-width: 480px; }
+  #key-form input {
+    flex: 1; font: inherit; padding: 8px 10px;
+    border: 1px solid var(--rule); border-radius: 3px; background: #fff;
+  }
+  #message {
+    margin: 0 0 18px; padding: 10px 12px; font-size: 14px;
+    border-left: 3px solid var(--airspace); background: #fff;
+  }
+
+  .numbers { display: flex; gap: 40px; flex-wrap: wrap; }
+  .number b { display: block; font-size: 28px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .number span { font-size: 14px; color: var(--ink-soft); }
+
+  table { border-collapse: collapse; width: 100%; font-size: 15px; }
+  th, td { text-align: left; padding: 9px 12px 9px 0; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  th { font-weight: 600; font-size: 13px; color: var(--ink-soft); }
+  td.num { font-variant-numeric: tabular-nums; }
+  .code { font: 12px var(--mono); color: var(--ink-soft); margin-left: 6px; }
+
+  .mix { display: flex; width: 180px; height: 8px; border-radius: 2px; overflow: hidden; background: var(--terrain); }
+  .mix-text { font-size: 12px; color: var(--ink-soft); font-variant-numeric: tabular-nums; margin-top: 3px; }
+  .flag {
+    display: inline-block; margin-left: 8px; padding: 0 6px; font-size: 12px;
+    border: 1px solid var(--airspace); color: var(--airspace); border-radius: 3px; cursor: help;
+  }
+  .legend { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 10px; font-size: 13px; color: var(--ink-soft); }
+  .swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; vertical-align: -1px; margin-right: 5px; }
+  .table-wrap { overflow-x: auto; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Grading progress</h1>
+  <span class="soft small">Team only. Please do not share this link with graders.</span>
+  <span class="spacer"></span>
+  <button id="refresh" hidden>Refresh</button>
+</header>
+<main>
+  <p id="message" hidden></p>
+
+  <form id="key-form" hidden>
+    <label for="key-input">Key</label>
+    <input id="key-input" autocomplete="off" spellcheck="false">
+    <button type="submit">Open</button>
+  </form>
+
+  <div id="report" hidden>
+    <section>
+      <h2>Project</h2>
+      <div class="numbers">
+        <div class="number"><b id="double-graded">0</b><span id="double-graded-note"></span></div>
+        <div class="number"><b id="percent-agreement">n/a</b><span>Observed agreement</span></div>
+        <div class="number"><b id="kappa">n/a</b><span>Fleiss' kappa</span></div>
+      </div>
+      <p class="soft small">Published expert agreement on this task was kappa 0.42 to 0.69 (Mogillo-Dettwiler 2024), so a middling figure is normal.</p>
+    </section>
+
+    <section>
+      <h2>People</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Graded</th>
+              <th>Last graded</th>
+              <th>Grade mix</th>
+              <th>Median seconds per pair</th>
+            </tr>
+          </thead>
+          <tbody id="people-rows"></tbody>
+        </table>
+      </div>
+      <div class="legend" id="legend"></div>
+    </section>
+  </div>
+</main>
+
+<script>
+const GRADES = [
+  { key: "critical", label: "Critical", short: "Crit", colour: "var(--grade-critical)" },
+  { key: "worth_knowing", label: "Worth knowing", short: "Worth", colour: "var(--grade-worth)" },
+  { key: "background", label: "Background", short: "Bkg", colour: "var(--grade-background)" },
+  { key: "not_relevant", label: "Not relevant", short: "None", colour: "var(--grade-none)" },
+];
+
+// Fleiss' kappa generalised to a varying number of raters per pair.
+// Kept identical to the copy in tests/agreement.test.mjs.
+function computeAgreement(pairs) {
+  const gradeKeys = ["critical", "worth_knowing", "background", "not_relevant"];
+  const categoryTotals = { critical: 0, worth_knowing: 0, background: 0, not_relevant: 0 };
+  let sumOfPairAgreement = 0;
+  let pairsUsed = 0;
+  let totalGrades = 0;
+
+  for (const pair of pairs) {
+    let raters = 0;
+    let agreeingRaterPairs = 0;
+    for (const key of gradeKeys) {
+      const count = pair.grades[key] || 0;
+      raters += count;
+      agreeingRaterPairs += count * (count - 1);
+    }
+    if (raters < 2) {
+      continue;
+    }
+    for (const key of gradeKeys) {
+      categoryTotals[key] += pair.grades[key] || 0;
+    }
+    sumOfPairAgreement += agreeingRaterPairs / (raters * (raters - 1));
+    pairsUsed += 1;
+    totalGrades += raters;
+  }
+
+  if (pairsUsed === 0) {
+    return { pairsUsed: 0, percentAgreement: null, kappa: null };
+  }
+
+  const meanAgreement = sumOfPairAgreement / pairsUsed;
+  let chanceAgreement = 0;
+  for (const key of gradeKeys) {
+    const share = categoryTotals[key] / totalGrades;
+    chanceAgreement += share * share;
+  }
+
+  // Everyone used one single grade: kappa is undefined, not perfect.
+  let kappa = null;
+  if (chanceAgreement < 1) {
+    kappa = (meanAgreement - chanceAgreement) / (1 - chanceAgreement);
+  }
+
+  return { pairsUsed: pairsUsed, percentAgreement: meanAgreement * 100, kappa: kappa };
+}
+
+function describeTimeAgo(value) {
+  if (!value) {
+    return { text: "never", full: "" };
+  }
+  // Accept ISO strings, epoch milliseconds, or epoch seconds from D1.
+  let when;
+  if (typeof value === "number" && value < 1e12) {
+    when = new Date(value * 1000);
+  } else {
+    when = new Date(value);
+  }
+  if (isNaN(when.getTime())) {
+    return { text: String(value), full: "" };
+  }
+
+  const secondsAgo = (Date.now() - when.getTime()) / 1000;
+  const wording = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
+  const steps = [
+    ["year", 365 * 86400],
+    ["month", 30 * 86400],
+    ["day", 86400],
+    ["hour", 3600],
+    ["minute", 60],
+  ];
+  let text = "just now";
+  for (const [unit, size] of steps) {
+    if (Math.abs(secondsAgo) >= size) {
+      text = wording.format(-Math.round(secondsAgo / size), unit);
+      break;
+    }
+  }
+  return { text: text, full: when.toLocaleString() };
+}
+
+function element(tag, className, text) {
+  const made = document.createElement(tag);
+  if (className) {
+    made.className = className;
+  }
+  if (text !== undefined) {
+    made.textContent = text;
+  }
+  return made;
+}
+
+function buildMixCell(mix) {
+  const cell = element("td");
+  let total = 0;
+  for (const grade of GRADES) {
+    total += (mix && mix[grade.key]) || 0;
+  }
+  if (total === 0) {
+    cell.textContent = "none yet";
+    cell.className = "soft";
+    return { cell: cell, biggestShare: 0 };
+  }
+
+  const bar = element("div", "mix");
+  const textParts = [];
+  const titleParts = [];
+  let biggestShare = 0;
+  for (const grade of GRADES) {
+    const amount = mix[grade.key] || 0;
+    const share = amount / total;
+    biggestShare = Math.max(biggestShare, share);
+    const piece = element("div");
+    piece.style.width = (share * 100) + "%";
+    piece.style.background = grade.colour;
+    bar.appendChild(piece);
+    textParts.push(grade.short + " " + Math.round(share * 100) + "%");
+    titleParts.push(grade.label + ": " + amount + " (" + Math.round(share * 100) + "%)");
+  }
+  cell.title = titleParts.join("\n");
+  cell.appendChild(bar);
+  cell.appendChild(element("div", "mix-text", textParts.join("  ")));
+  return { cell: cell, biggestShare: biggestShare };
+}
+
+function render(data, totalPairs) {
+  const people = (data.people || []).slice();
+  people.sort((a, b) => String(a.name).localeCompare(String(b.name)));
+
+  const rows = document.getElementById("people-rows");
+  rows.textContent = "";
+  for (const person of people) {
+    const row = element("tr");
+
+    const nameCell = element("td", null, person.name);
+    nameCell.appendChild(element("span", "code", person.code));
+    row.appendChild(nameCell);
+
+    const percent = totalPairs ? Math.round((person.graded / totalPairs) * 100) : 0;
+    row.appendChild(element("td", "num", person.graded + " / " + totalPairs + "  (" + percent + "%)"));
+
+    const lastGraded = describeTimeAgo(person.last_graded);
+    const lastCell = element("td", null, lastGraded.text);
+    lastCell.title = lastGraded.full;
+    row.appendChild(lastCell);
+
+    const mixResult = buildMixCell(person.mix);
+    row.appendChild(mixResult.cell);
+
+    const median = person.median_seconds;
+    const medianCell = element("td", "num", median == null ? "n/a" : String(Math.round(median * 10) / 10));
+    row.appendChild(medianCell);
+
+    const looksOneSided = mixResult.biggestShare > 0.8;
+    const looksRushed = median != null && median < 4;
+    if (person.graded >= 20 && (looksOneSided || looksRushed)) {
+      const reasons = [];
+      if (looksOneSided) {
+        reasons.push("over 80% of answers are one grade");
+      }
+      if (looksRushed) {
+        reasons.push("median under 4 seconds per pair");
+      }
+      const flag = element("span", "flag", "check in");
+      flag.title = "Worth a quick chat, may have misread the scale (" + reasons.join("; ") + ").";
+      nameCell.appendChild(flag);
+    }
+
+    rows.appendChild(row);
+  }
+
+  const multiGraded = (data.pairs || []).filter((pair) => {
+    let raters = 0;
+    for (const grade of GRADES) {
+      raters += pair.grades[grade.key] || 0;
+    }
+    return raters >= 2;
+  });
+  const agreement = computeAgreement(multiGraded);
+  const multiPercent = totalPairs ? ((multiGraded.length / totalPairs) * 100).toFixed(1) : "0";
+
+  document.getElementById("double-graded").textContent = multiGraded.length;
+  document.getElementById("double-graded-note").textContent =
+    "Pairs with two or more grades (" + multiPercent + "% of " + totalPairs + ")";
+  document.getElementById("percent-agreement").textContent =
+    agreement.percentAgreement == null ? "n/a" : agreement.percentAgreement.toFixed(1) + "%";
+  document.getElementById("kappa").textContent =
+    agreement.kappa == null ? "n/a" : agreement.kappa.toFixed(2);
+
+  const legend = document.getElementById("legend");
+  legend.textContent = "";
+  for (const grade of GRADES) {
+    const item = element("span");
+    const swatch = element("i", "swatch");
+    swatch.style.background = grade.colour;
+    item.appendChild(swatch);
+    item.appendChild(document.createTextNode(grade.short + " = " + grade.label));
+    legend.appendChild(item);
+  }
+
+  document.getElementById("report").hidden = false;
+}
+
+function showMessage(text) {
+  const message = document.getElementById("message");
+  message.textContent = text;
+  message.hidden = !text;
+}
+
+function readKeyFromHash() {
+  const params = new URLSearchParams(location.hash.slice(1));
+  return params.get("key");
+}
+
+async function load() {
+  const key = readKeyFromHash();
+  const form = document.getElementById("key-form");
+  if (!key) {
+    form.hidden = false;
+    document.getElementById("report").hidden = true;
+    document.getElementById("key-input").focus();
+    return;
+  }
+  form.hidden = true;
+  showMessage("Loading...");
+
+  try {
+    const [progressResponse, pairsResponse] = await Promise.all([
+      fetch("/api/progress?key=" + encodeURIComponent(key)),
+      fetch("pairs.json"),
+    ]);
+
+    if (progressResponse.status === 403) {
+      showMessage("That key is not right.");
+      form.hidden = false;
+      document.getElementById("report").hidden = true;
+      return;
+    }
+    if (!progressResponse.ok) {
+      throw new Error("progress returned " + progressResponse.status);
+    }
+
+    const data = await progressResponse.json();
+    let pairs = await pairsResponse.json();
+    if (!Array.isArray(pairs)) {
+      pairs = pairs.pairs || [];
+    }
+
+    render(data, pairs.length);
+    showMessage("");
+    document.getElementById("refresh").hidden = false;
+  } catch (error) {
+    showMessage("Could not load progress: " + error.message);
+  }
+}
+
+document.getElementById("key-form").addEventListener("submit", (event) => {
+  event.preventDefault();
+  const typed = document.getElementById("key-input").value.trim();
+  if (!typed) {
+    return;
+  }
+  const newHash = "#key=" + encodeURIComponent(typed);
+  // Re-entering the same key does not fire hashchange, so load directly.
+  if (location.hash === newHash) {
+    load();
+  } else {
+    location.hash = newHash;
+  }
+});
+window.addEventListener("hashchange", load);
+document.getElementById("refresh").addEventListener("click", load);
+load();
+</script>
+</body>
+</html>

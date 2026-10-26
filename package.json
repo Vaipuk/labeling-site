@@ -1,0 +1,14 @@
+{
+  "name": "acpa-labeling-site",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node -e \"require('fs').mkdirSync('public',{recursive:true});require('fs').copyFileSync('data/pairs.json','public/pairs.json')\"",
+    "db:local": "wrangler d1 execute acpa-labels --local --file schema.sql",
+    "dev": "npm run build && wrangler pages dev public",
+    "test": "node --test tests/*.test.js tests/*.test.mjs"
+  },
+  "devDependencies": {
+    "wrangler": "^4.40.0"
+  }
+}
