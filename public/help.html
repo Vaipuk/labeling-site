@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How this works</title>
+<style>
+  :root {
+    --paper: #edede7;
+    --ink: #15171b;
+    --ink-soft: #5b6169;
+    --rule: #c5c3b9;
+    --airspace: #a81e68;
+    --track: #1a5b8f;
+    --ui: "Segoe UI", system-ui, -apple-system, sans-serif;
+    --mono: Consolas, "Cascadia Mono", "SF Mono", monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font: 16px/1.6 var(--ui); }
+  main { max-width: 680px; margin: 0 auto; padding: 32px 20px 56px; }
+  h1 { font-size: 26px; font-weight: 600; margin: 0 0 6px; letter-spacing: -0.01em; }
+  h2 { font-size: 18px; font-weight: 600; margin: 32px 0 8px; }
+  .lead { color: var(--ink-soft); margin: 0 0 8px; }
+  a { color: var(--track); }
+  ol, ul { padding-left: 22px; margin: 8px 0; }
+  li { margin: 4px 0; }
+  table { border-collapse: collapse; width: 100%; margin: 8px 0; }
+  td { padding: 10px 12px 10px 0; border-top: 1px solid var(--rule); vertical-align: top; }
+  td:first-child { white-space: nowrap; font-weight: 600; }
+  kbd {
+    font: 13px var(--mono); padding: 1px 6px; border: 1px solid var(--rule);
+    border-bottom-width: 2px; border-radius: 3px; background: #fff;
+  }
+  .swatch { display: inline-block; width: 14px; height: 3px; vertical-align: middle; margin-right: 6px; }
+  .note { border-left: 3px solid var(--track); background: #fff; padding: 10px 14px; margin: 16px 0; }
+  .back { display: inline-block; margin-top: 32px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>How this works</h1>
+  <p class="lead">Thank you for helping. This takes about a minute to read.</p>
+
+  <h2>What you are doing</h2>
+  <p>Each screen shows one real training flight and one NOTAM that was active
+    while it flew. You tell us how much that notice should have mattered to
+    that flight. That is the whole job.</p>
+  <p>The same notice can matter a lot to one flight and not at all to another,
+    so judge each screen on its own.</p>
+
+  <h2>Reading a screen</h2>
+  <ul>
+    <li><strong>The map.</strong>
+      <span class="swatch" style="background:var(--track)"></span>the flight path
+      (the dot is where it started), and
+      <span class="swatch" style="background:var(--airspace)"></span>the area the notice covers.
+      The scale bar in the corner shows distance in nautical miles.</li>
+    <li><strong>The big sentence</strong> is the notice in plain English.</li>
+    <li><strong>The details</strong> say how close the flight came, what the
+      aircraft was doing then, its altitude, and how long the notice was active.</li>
+    <li><strong>"Show the notice as it was published"</strong> opens the original
+      text, in case you want to check our reading of it.</li>
+  </ul>
+
+  <h2>Picking a grade</h2>
+  <table>
+    <tr><td><kbd>1</kbd> Critical</td><td>The crew needed this. Not knowing it could have changed what they did.</td></tr>
+    <tr><td><kbd>2</kbd> Worth knowing</td><td>Genuinely useful, but would not have changed the flight.</td></tr>
+    <tr><td><kbd>3</kbd> Background</td><td>Applies technically, but a crew would reasonably not act on it.</td></tr>
+    <tr><td><kbd>4</kbd> Not relevant</td><td>No bearing on this flight at all.</td></tr>
+  </table>
+  <p>There are no wrong answers. We want your judgment, not a guess at ours.</p>
+  <p><strong>Why, in a few words</strong> is optional, but very helpful.
+    Short notes like "right on the downwind leg" or "wrong side of the field"
+    are perfect. Type it before you pick the grade.</p>
+
+  <h2>Moving around</h2>
+  <ul>
+    <li>Press <kbd>1</kbd> to <kbd>4</kbd> (or click a grade) to answer and move to the next one.</li>
+    <li><kbd>&larr;</kbd> and <kbd>&rarr;</kbd>, or Back and Skip, move without answering.</li>
+    <li>Go back and pick a different grade any time. The new one replaces the old one.</li>
+  </ul>
+
+  <h2>Saving and coming back</h2>
+  <div class="note">Every answer saves the moment you give it. You do not need to do anything.</div>
+  <ul>
+    <li><strong>Save progress</strong> double-checks: it tells you how many of your answers the site has.</li>
+    <li>Stop whenever you like. Next time, the site remembers you and picks up where you left off.</li>
+    <li>On a different computer or browser, click "I have a code" and type the code you were given
+      (it looks like <code>sam-4f7a</code>).</li>
+    <li>If the top of the page shows someone else's name, click "Not you?".</li>
+  </ul>
+
+  <h2>How many to do</h2>
+  <p>As many as you can. Everyone sees the same pairs in the same order, so
+    even a part-finished set is useful. Doing them all is wonderful, but
+    never expected.</p>
+
+  <a class="back" href="/">Back to grading</a>
+</main>
+</body>
+</html>

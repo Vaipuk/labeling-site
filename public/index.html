@@ -77,6 +77,8 @@
   .screen form { display: flex; gap: 10px; margin: 0 0 14px; }
   .screen input { flex: 1; font: inherit; font-size: 18px; padding: 9px 12px; border: 1px solid var(--rule); border-radius: 3px; background: #fff; }
   .screen .problem { color: var(--airspace); min-height: 1.5em; margin: 0 0 14px; }
+  .savebox { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+  .savenote { font-size: 13px; color: var(--ink-soft); min-height: 1.2em; }
   .bigcode { font: 600 34px/1.2 var(--mono); margin: 8px 0 18px; letter-spacing: 0.02em; }
   @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 </style>
@@ -99,12 +101,14 @@
     <button type="submit">Go</button>
   </form>
   <p class="problem" id="startProblem"></p>
+  <p><a class="linkish" href="/help" target="_blank">How this works</a>, a one-minute read.</p>
 </div>
 
 <div class="screen" id="newCode" hidden>
   <p>Your code to come back with:</p>
   <p class="bigcode" id="newCodeText"></p>
   <p>Write it down.</p>
+  <p>New here? <a class="linkish" href="/help" target="_blank">Read how this works</a> first. It takes a minute.</p>
   <button id="continue">Continue</button>
 </div>
 
@@ -115,7 +119,11 @@
   <button class="linkish" id="notYou">Not you?</button>
   <span class="count" id="count"></span>
   <div class="bar"><div id="progress"></div></div>
-  <button id="save">Save progress</button>
+  <a class="linkish" href="/help" target="_blank">How this works</a>
+  <div class="savebox">
+    <button id="save">Save progress</button>
+    <span class="savenote" id="saveNote" role="status"></span>
+  </div>
 </header>
 
 <main>
@@ -496,6 +504,7 @@ function grade(value) {
   const item = ITEMS[at];
   answers[item.id] = { grade: value, why: el("why").value.trim(), when: new Date().toISOString() };
   queueAnswer(item.id, answers[item.id]);
+  el("saveNote").textContent = "";  // the count it showed is now out of date
   if (at < ITEMS.length - 1) { go(1); } else { show(); }
 }
 
@@ -527,18 +536,23 @@ document.addEventListener("keydown", e => {
 // queued and then asks the server for its count, so "saved" is never a guess.
 el("save").addEventListener("click", async () => {
   el("done").textContent = "Saving...";
+  el("saveNote").textContent = "Saving...";
   await flushPending();
   const waiting = Object.keys(pending).length;
   if (waiting > 0) {
+    el("saveNote").textContent = "Not saved yet, retrying";
     el("done").textContent = `${waiting === 1 ? "1 answer is" : waiting + " answers are"} not saved yet. `
       + "Check your connection; it keeps retrying while this tab is open.";
     return;
   }
   try {
     const found = await callApi("GET", "/api/people/" + encodeURIComponent(person.code));
-    el("done").textContent = `Saved. The site has all ${found.graded} of your answers. `
+    const howMany = found.graded === 1 ? "your 1 answer" : `all ${found.graded} of your answers`;
+    el("saveNote").textContent = found.graded === 1 ? "Saved: 1 answer" : `Saved: all ${found.graded} answers`;
+    el("done").textContent = `Saved. The site has ${howMany}. `
       + `Come back any time with your code ${person.code}.`;
   } catch (e) {
+    el("saveNote").textContent = "Could not check, retrying";
     el("done").textContent = "Could not reach the site to check. Your answers stay queued on this device until it can.";
   }
 });
