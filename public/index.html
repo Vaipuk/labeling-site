@@ -115,7 +115,7 @@
   <button class="linkish" id="notYou">Not you?</button>
   <span class="count" id="count"></span>
   <div class="bar"><div id="progress"></div></div>
-  <button id="export">Save my answers to a file</button>
+  <button id="save">Save progress</button>
 </header>
 
 <main>
@@ -153,8 +153,6 @@
   <div class="nav">
     <button id="prev">Back</button>
     <button id="next">Skip for now</button>
-    <button id="import">Load answers from a file</button>
-    <input type="file" id="importFile" accept=".csv" hidden>
     <span class="spacer"></span>
     <span class="done" id="done"></span>
   </div>
@@ -167,7 +165,7 @@ let person = null;       // { code, name }
 let isNewPerson = false;
 let answers = {};        // pair_id -> { grade, why, when }
 let pending = {};        // pair_id -> { pair_id, grade, why, when }, not yet on the server
-let flushing = false;
+let flushing = null;     // the save run in progress, if any
 let at = 0;
 
 const el = id => document.getElementById(id);
@@ -241,9 +239,16 @@ function queueAnswer(pairId, answer) {
 
 // Sends the queue one at a time and stops at the first failure, so a dead
 // connection costs one failed request, not one per answer.
-async function flushPending() {
-  if (flushing || !person) return;
-  flushing = true;
+// Hands back the run already going, so "Save progress" waits for an in-flight save.
+function flushPending() {
+  if (!flushing) {
+    flushing = sendPending().finally(() => { flushing = null; });
+  }
+  return flushing;
+}
+
+async function sendPending() {
+  if (!person) return;
   const code = person.code;
   try {
     // Re-read the queue each time round, so answers given mid-flush go too.
@@ -266,8 +271,6 @@ async function flushPending() {
     }
   } catch (e) {
     // Stays queued; the timer, the next answer or coming back online retries.
-  } finally {
-    flushing = false;
   }
 }
 
@@ -518,91 +521,26 @@ document.addEventListener("keydown", e => {
   else if (e.key === "ArrowLeft") { go(-1); }
 });
 
-// ---------- files ----------
+// ---------- save progress ----------
 
-/** Read back an exported file. Fields are quoted, with "" for a literal quote. */
-function parseCsv(text) {
-  const rows = [];
-  let row = [], cell = "", quoted = false;
-  for (let i = 0; i < text.length; i++) {
-    const ch = text[i];
-    if (quoted) {
-      if (ch === '"' && text[i + 1] === '"') { cell += '"'; i++; }
-      else if (ch === '"') { quoted = false; }
-      else { cell += ch; }
-    } else if (ch === '"') { quoted = true; }
-    else if (ch === ",") { row.push(cell); cell = ""; }
-    else if (ch === "\n") { row.push(cell); rows.push(row); row = []; cell = ""; }
-    else if (ch !== "\r") { cell += ch; }
+// Every answer already saves as it is given. This button pushes anything still
+// queued and then asks the server for its count, so "saved" is never a guess.
+el("save").addEventListener("click", async () => {
+  el("done").textContent = "Saving...";
+  await flushPending();
+  const waiting = Object.keys(pending).length;
+  if (waiting > 0) {
+    el("done").textContent = `${waiting === 1 ? "1 answer is" : waiting + " answers are"} not saved yet. `
+      + "Check your connection; it keeps retrying while this tab is open.";
+    return;
   }
-  if (cell || row.length) { row.push(cell); rows.push(row); }
-  return rows;
-}
-
-el("import").addEventListener("click", () => el("importFile").click());
-el("importFile").addEventListener("change", event => {
-  const file = event.target.files[0];
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = async () => {
-    const rows = parseCsv(String(reader.result));
-    const head = rows.shift() || [];
-    const col = name => head.indexOf(name);
-    const known = new Set(ITEMS.map(i => i.id));
-    const toSend = [];
-    let skipped = 0;
-    rows.forEach(r => {
-      const id = r[col("pair_id")];
-      if (!id) return;
-      if (!known.has(id)) { skipped++; return; }
-      toSend.push({ pair_id: id, grade: r[col("grade")], why: r[col("why")] || "", graded_at: r[col("graded_at")] || "" });
-    });
-    el("done").textContent = "Loading that file onto the site...";
-    let loaded = 0;
-    try {
-      const result = await callApi("POST", "/api/answers/import", { code: person.code, rows: toSend });
-      loaded = result.loaded || 0;
-      skipped += result.skipped || 0;
-      await loadAnswers();
-    } catch (e) {
-      el("done").textContent = "Could not load that file onto the site. Check your connection and try again.";
-      return;
-    }
-    at = ITEMS.findIndex(item => !answers[item.id]);
-    if (at < 0) at = ITEMS.length - 1;
-    show();
-    el("done").textContent = skipped
-      ? `Loaded ${loaded} answers. ${skipped === 1 ? "One row was" : skipped + " rows were"} `
-        + "for a different set of flights and got left out."
-      : `Loaded ${loaded} answers. Carrying on from where that file stopped.`;
-  };
-  reader.readAsText(file);
-  event.target.value = "";
-});
-
-el("export").addEventListener("click", () => {
-  const head = ["pair_id", "flight_id", "notam_id", "grade", "why", "graded_at"];
-  const lines = [head.join(",")];
-  ITEMS.forEach(item => {
-    const a = answers[item.id];
-    if (!a) return;
-    const [flight, notam] = item.id.split("__");
-    const cells = [item.id, flight, notam, a.grade, (a.why || "").replace(/"/g, '""'), a.when];
-    lines.push(cells.map(c => `"${c}"`).join(","));
-  });
-  // Every export is the full set, not a delta. Browsers will not overwrite a
-  // download, they append "(1)", so the date and count in the name are what
-  // tell her, and us, which file is the newest.
-  const now = new Date();
-  const pad = n => String(n).padStart(2, "0");
-  const stamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}`;
-  const graded = lines.length - 1;
-  const blob = new Blob([lines.join("\n")], { type: "text/csv" });
-  const link = document.createElement("a");
-  link.href = URL.createObjectURL(blob);
-  link.download = `notam_answers_${stamp}_${graded}of${ITEMS.length}.csv`;
-  link.click();
-  el("done").textContent = `Saved ${graded} answers to a file. Your answers are also saved on the site.`;
+  try {
+    const found = await callApi("GET", "/api/people/" + encodeURIComponent(person.code));
+    el("done").textContent = `Saved. The site has all ${found.graded} of your answers. `
+      + `Come back any time with your code ${person.code}.`;
+  } catch (e) {
+    el("done").textContent = "Could not reach the site to check. Your answers stay queued on this device until it can.";
+  }
 });
 
 // ---------- start up ----------
